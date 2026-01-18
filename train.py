@@ -1,7 +1,7 @@
 import argparse
 import os
 import tensorflow as tf
-import numpy as np
+import json
 
 
 def parse_args():
@@ -10,6 +10,7 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--hidden-units", type=int, default=128)
     parser.add_argument("--model-dir", type=str, default="/mnt/model")
+    parser.add_argument("--metrics-dir", type=str, required=True)
     return parser.parse_args()
 
 
@@ -65,10 +66,16 @@ def main():
     os.makedirs(args.model_dir, exist_ok=True)
     model.save(args.model_dir)
 
+    os.makedirs(args.metrics_dir, exist_ok=True)
+
+    metrics = {
+        "accuracy": accuracy,
+        "loss": loss
+    }
+
     # Write metrics for downstream Kubeflow steps
-    with open("/mnt/model/metrics.txt", "w") as f:
-        f.write(f"accuracy={accuracy}\n")
-        f.write(f"loss={loss}\n")
+    with open(os.path.join(args.metrics_dir, "metrics.json"), "w") as f:
+        json.dump(metrics, f)
 
 
 if __name__ == "__main__":

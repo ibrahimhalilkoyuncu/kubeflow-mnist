@@ -1,9 +1,9 @@
 from kfp import dsl
-from kfp.dsl import Input, Output, Model, Metrics
+from kfp.dsl import Output, Model, Metrics
 
 
 @dsl.component(
-    base_image="your-docker-registry/kubeflow-fashion-mnist:latest"
+    base_image="kubeflow-fashion-mnist:1.0"
 )
 def train_model(
     learning_rate: float,
@@ -12,15 +12,7 @@ def train_model(
     model: Output[Model],
     metrics: Output[Metrics],
 ):
-    """
-    Trains a Fashion-MNIST model and outputs a SavedModel + metrics
-    """
-
     import subprocess
-    import json
-    import os
-
-    model_dir = model.path
 
     cmd = [
         "python",
@@ -28,24 +20,8 @@ def train_model(
         f"--learning-rate={learning_rate}",
         f"--epochs={epochs}",
         f"--hidden-units={hidden_units}",
-        f"--model-dir={model_dir}",
+        f"--model-dir={model.path}",
+        f"--metrics-dir={metrics.path}",
     ]
 
     subprocess.run(cmd, check=True)
-
-    # Read metrics written by train.py
-    metrics_file = os.path.join(model_dir, "metrics.txt")
-
-    accuracy = None
-    loss = None
-
-    with open(metrics_file) as f:
-        for line in f:
-            key, value = line.strip().split("=")
-            if key == "accuracy":
-                accuracy = float(value)
-            elif key == "loss":
-                loss = float(value)
-
-    metrics.log_metric("accuracy", accuracy)
-    metrics.log_metric("loss", loss)

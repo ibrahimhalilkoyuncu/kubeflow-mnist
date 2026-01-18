@@ -21,7 +21,7 @@ def fashion_mnist_pipeline(
 
     # Fan-out: parallel training runs
     with dsl.ParallelFor(learning_rates) as lr:
-        train_model(
+        task = train_model(
             learning_rate=lr,
             epochs=epochs,
             hidden_units=hidden_units,
