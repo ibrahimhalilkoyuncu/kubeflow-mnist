@@ -59,9 +59,23 @@ def select_best_model_manual(
     print(f"\nBest model: Model {best_idx+1} with accuracy={best_acc}")
 
     # Copy best model to output
+    # TensorFlow Serving requires models to be in a versioned directory (e.g., /1/)
     best_model_artifact = models[best_idx]
     
     if os.path.exists(best_model.path):
         shutil.rmtree(best_model.path)
     
-    shutil.copytree(best_model_artifact.path, best_model.path)
+    # Create version directory for TensorFlow Serving
+    version_dir = os.path.join(best_model.path, "1")
+    os.makedirs(version_dir, exist_ok=True)
+    
+    # Copy model files to versioned directory
+    for item in os.listdir(best_model_artifact.path):
+        src = os.path.join(best_model_artifact.path, item)
+        dst = os.path.join(version_dir, item)
+        if os.path.isdir(src):
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy2(src, dst)
+    
+    print(f"Model saved to versioned directory: {version_dir}")

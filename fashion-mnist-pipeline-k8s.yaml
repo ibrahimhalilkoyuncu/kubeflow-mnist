@@ -1,0 +1,547 @@
+apiVersion: pipelines.kubeflow.org/v2beta1
+kind: Pipeline
+metadata:
+  name: fashion-mnist-hyperparameter-pipeline
+  namespace: kubeflow
+spec:
+  description: Train Fashion-MNIST with parallel hyperparameter runs and select best
+    model
+  displayName: Fashion MNIST Hyperparameter Pipeline
+---
+apiVersion: pipelines.kubeflow.org/v2beta1
+kind: PipelineVersion
+metadata:
+  name: v1
+  namespace: kubeflow
+spec:
+  description: Train Fashion-MNIST with parallel hyperparameter runs and select best
+    model
+  displayName: Fashion MNIST HP v1
+  pipelineName: fashion-mnist-hyperparameter-pipeline
+  pipelineSpec:
+    components:
+      comp-deploy-to-kserve:
+        executorLabel: exec-deploy-to-kserve
+        inputDefinitions:
+          artifacts:
+            model:
+              artifactType:
+                schemaTitle: system.Model
+                schemaVersion: 0.0.1
+              description: The best model artifact from the pipeline
+          parameters:
+            max_replicas:
+              defaultValue: 3.0
+              description: Maximum number of replicas
+              isOptional: true
+              parameterType: NUMBER_INTEGER
+            min_replicas:
+              defaultValue: 1.0
+              description: Minimum number of replicas
+              isOptional: true
+              parameterType: NUMBER_INTEGER
+            model_name:
+              defaultValue: fashion-mnist-model
+              description: Name for the InferenceService
+              isOptional: true
+              parameterType: STRING
+            namespace:
+              defaultValue: kubeflow
+              description: Kubernetes namespace to deploy to
+              isOptional: true
+              parameterType: STRING
+      comp-select-best-model-manual:
+        executorLabel: exec-select-best-model-manual
+        inputDefinitions:
+          artifacts:
+            metrics_1:
+              artifactType:
+                schemaTitle: system.Metrics
+                schemaVersion: 0.0.1
+            metrics_2:
+              artifactType:
+                schemaTitle: system.Metrics
+                schemaVersion: 0.0.1
+            metrics_3:
+              artifactType:
+                schemaTitle: system.Metrics
+                schemaVersion: 0.0.1
+            model_1:
+              artifactType:
+                schemaTitle: system.Model
+                schemaVersion: 0.0.1
+            model_2:
+              artifactType:
+                schemaTitle: system.Model
+                schemaVersion: 0.0.1
+            model_3:
+              artifactType:
+                schemaTitle: system.Model
+                schemaVersion: 0.0.1
+        outputDefinitions:
+          artifacts:
+            best_model:
+              artifactType:
+                schemaTitle: system.Model
+                schemaVersion: 0.0.1
+      comp-train-model:
+        executorLabel: exec-train-model
+        inputDefinitions:
+          parameters:
+            epochs:
+              parameterType: NUMBER_INTEGER
+            hidden_units:
+              parameterType: NUMBER_INTEGER
+            learning_rate:
+              parameterType: NUMBER_DOUBLE
+        outputDefinitions:
+          artifacts:
+            metrics:
+              artifactType:
+                schemaTitle: system.Metrics
+                schemaVersion: 0.0.1
+            model:
+              artifactType:
+                schemaTitle: system.Model
+                schemaVersion: 0.0.1
+      comp-train-model-2:
+        executorLabel: exec-train-model-2
+        inputDefinitions:
+          parameters:
+            epochs:
+              parameterType: NUMBER_INTEGER
+            hidden_units:
+              parameterType: NUMBER_INTEGER
+            learning_rate:
+              parameterType: NUMBER_DOUBLE
+        outputDefinitions:
+          artifacts:
+            metrics:
+              artifactType:
+                schemaTitle: system.Metrics
+                schemaVersion: 0.0.1
+            model:
+              artifactType:
+                schemaTitle: system.Model
+                schemaVersion: 0.0.1
+      comp-train-model-3:
+        executorLabel: exec-train-model-3
+        inputDefinitions:
+          parameters:
+            epochs:
+              parameterType: NUMBER_INTEGER
+            hidden_units:
+              parameterType: NUMBER_INTEGER
+            learning_rate:
+              parameterType: NUMBER_DOUBLE
+        outputDefinitions:
+          artifacts:
+            metrics:
+              artifactType:
+                schemaTitle: system.Metrics
+                schemaVersion: 0.0.1
+            model:
+              artifactType:
+                schemaTitle: system.Model
+                schemaVersion: 0.0.1
+    deploymentSpec:
+      executors:
+        exec-deploy-to-kserve:
+          container:
+            args:
+            - --executor_input
+            - '{{$}}'
+            - --function_to_execute
+            - deploy_to_kserve
+            command:
+            - sh
+            - -c
+            - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip\
+              \ || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\
+              \nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location\
+              \ 'kubernetes==28.1.0'  &&  python3 -m pip install --quiet --no-warn-script-location\
+              \ 'kfp==2.15.2' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+              3.9\"' && \"$0\" \"$@\"\n"
+            - sh
+            - -ec
+            - 'program_path=$(mktemp -d)
+
+
+              printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+              _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+              '
+            - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing\
+              \ import *\n\ndef deploy_to_kserve(\n    model: Input[Model],\n    model_name:\
+              \ str = \"fashion-mnist-model\",\n    namespace: str = \"kubeflow\"\
+              ,\n    min_replicas: int = 1,\n    max_replicas: int = 3,\n):\n    \"\
+              \"\"\n    Deploy the best model to KServe InferenceService\n\n    Args:\n\
+              \        model: The best model artifact from the pipeline\n        model_name:\
+              \ Name for the InferenceService\n        namespace: Kubernetes namespace\
+              \ to deploy to\n        min_replicas: Minimum number of replicas\n \
+              \       max_replicas: Maximum number of replicas\n    \"\"\"\n    import\
+              \ os\n    from kubernetes import client, config\n\n    # Load in-cluster\
+              \ config\n    config.load_incluster_config()\n\n    # Get the model\
+              \ URI from the artifact\n    # The model.uri will be something like:\
+              \ minio://mlpipeline/v2/artifacts/<pipeline-run-id>/<task-id>/best_model\n\
+              \    model_uri = model.uri\n\n    # Convert minio:// to s3:// for KServe\n\
+              \    # KServe uses S3 protocol to access MinIO\n    if model_uri.startswith(\"\
+              minio://\"):\n        # Extract the path after minio://\n        path\
+              \ = model_uri.replace(\"minio://\", \"\")\n        # Construct S3 URI\
+              \ pointing to MinIO service\n        storage_uri = f\"s3://{path}\"\n\
+              \    else:\n        storage_uri = model_uri\n\n    print(f\"Model URI:\
+              \ {model_uri}\")\n    print(f\"Storage URI for KServe: {storage_uri}\"\
+              )\n\n    # Define the InferenceService manifest\n    inference_service\
+              \ = {\n        \"apiVersion\": \"serving.kserve.io/v1beta1\",\n    \
+              \    \"kind\": \"InferenceService\",\n        \"metadata\": {\n    \
+              \        \"name\": model_name,\n            \"namespace\": namespace,\n\
+              \            \"annotations\": {\n                \"sidecar.istio.io/inject\"\
+              : \"true\"\n            }\n        },\n        \"spec\": {\n       \
+              \     \"predictor\": {\n                \"serviceAccountName\": \"kserve-sa\"\
+              ,\n                \"tensorflow\": {\n                    \"storageUri\"\
+              : storage_uri,\n                    \"runtimeVersion\": \"2.14.0\",\n\
+              \                    \"resources\": {\n                        \"requests\"\
+              : {\n                            \"cpu\": \"500m\",\n              \
+              \              \"memory\": \"1Gi\"\n                        },\n   \
+              \                     \"limits\": {\n                            \"\
+              cpu\": \"1\",\n                            \"memory\": \"2Gi\"\n   \
+              \                     }\n                    },\n                  \
+              \  \"protocolVersion\": \"v1\"\n                },\n               \
+              \ \"minReplicas\": min_replicas,\n                \"maxReplicas\": max_replicas,\n\
+              \                \"scaleTarget\": 1,\n                \"scaleMetric\"\
+              : \"concurrency\"\n            }\n        }\n    }\n\n    # Create custom\
+              \ object API client\n    api = client.CustomObjectsApi()\n\n    try:\n\
+              \        # Try to get existing InferenceService\n        existing =\
+              \ api.get_namespaced_custom_object(\n            group=\"serving.kserve.io\"\
+              ,\n            version=\"v1beta1\",\n            namespace=namespace,\n\
+              \            plural=\"inferenceservices\",\n            name=model_name\n\
+              \        )\n\n        # Update existing InferenceService\n        print(f\"\
+              Updating existing InferenceService: {model_name}\")\n        api.patch_namespaced_custom_object(\n\
+              \            group=\"serving.kserve.io\",\n            version=\"v1beta1\"\
+              ,\n            namespace=namespace,\n            plural=\"inferenceservices\"\
+              ,\n            name=model_name,\n            body=inference_service\n\
+              \        )\n        print(f\"InferenceService {model_name} updated successfully\"\
+              )\n\n    except client.exceptions.ApiException as e:\n        if e.status\
+              \ == 404:\n            # Create new InferenceService\n            print(f\"\
+              Creating new InferenceService: {model_name}\")\n            api.create_namespaced_custom_object(\n\
+              \                group=\"serving.kserve.io\",\n                version=\"\
+              v1beta1\",\n                namespace=namespace,\n                plural=\"\
+              inferenceservices\",\n                body=inference_service\n     \
+              \       )\n            print(f\"InferenceService {model_name} created\
+              \ successfully\")\n        else:\n            raise\n\n    print(f\"\
+              \\nDeployment complete!\")\n    print(f\"Model: {model_name}\")\n  \
+              \  print(f\"Namespace: {namespace}\")\n    print(f\"Storage URI: {storage_uri}\"\
+              )\n\n"
+            image: python:3.11
+        exec-select-best-model-manual:
+          container:
+            args:
+            - --executor_input
+            - '{{$}}'
+            - --function_to_execute
+            - select_best_model_manual
+            command:
+            - sh
+            - -c
+            - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip\
+              \ || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\
+              \nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location\
+              \ 'kfp==2.15.2' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+              3.9\"' && \"$0\" \"$@\"\n"
+            - sh
+            - -ec
+            - 'program_path=$(mktemp -d)
+
+
+              printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+              _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+              '
+            - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing\
+              \ import *\n\ndef select_best_model_manual(\n    model_1: Input[Model],\n\
+              \    metrics_1: Input[Metrics],\n    model_2: Input[Model],\n    metrics_2:\
+              \ Input[Metrics],\n    model_3: Input[Model],\n    metrics_3: Input[Metrics],\n\
+              \    best_model: Output[Model],\n):\n    \"\"\"\n    Select the best\
+              \ model based on accuracy metric from 3 training runs\n\n    Args:\n\
+              \        model_1, model_2, model_3: Model artifacts from training runs\n\
+              \        metrics_1, metrics_2, metrics_3: Metrics artifacts from training\
+              \ runs\n        best_model: Output artifact for the best selected model\n\
+              \    \"\"\"\n    import os\n    import json\n    import shutil\n\n \
+              \   models = [model_1, model_2, model_3]\n    metrics = [metrics_1,\
+              \ metrics_2, metrics_3]\n\n    best_idx = -1\n    best_acc = -1.0\n\n\
+              \    # Iterate through metrics to find best accuracy\n    for i, metric_artifact\
+              \ in enumerate(metrics):\n        # Read metrics from metadata\n   \
+              \     if hasattr(metric_artifact, 'metadata') and metric_artifact.metadata:\n\
+              \            acc = metric_artifact.metadata.get(\"accuracy\", 0.0)\n\
+              \            lr = metric_artifact.metadata.get(\"learning_rate\", 0.0)\n\
+              \        else:\n            # Fallback: read from metrics.json file\n\
+              \            metric_path = os.path.join(metric_artifact.path, \"metrics.json\"\
+              )\n            if os.path.exists(metric_path):\n                with\
+              \ open(metric_path) as f:\n                    data = json.load(f)\n\
+              \                    acc = data.get(\"accuracy\", 0.0)\n           \
+              \         lr = data.get(\"learning_rate\", 0.0)\n            else:\n\
+              \                acc = 0.0\n                lr = 0.0\n\n        print(f\"\
+              Model {i+1} (lr={lr}): accuracy={acc}\")\n\n        if acc > best_acc:\n\
+              \            best_acc = acc\n            best_idx = i\n\n    print(f\"\
+              \\nBest model: Model {best_idx+1} with accuracy={best_acc}\")\n\n  \
+              \  # Copy best model to output\n    best_model_artifact = models[best_idx]\n\
+              \n    if os.path.exists(best_model.path):\n        shutil.rmtree(best_model.path)\n\
+              \n    shutil.copytree(best_model_artifact.path, best_model.path)\n\n"
+            image: python:3.11
+        exec-train-model:
+          container:
+            args:
+            - --executor_input
+            - '{{$}}'
+            - --function_to_execute
+            - train_model
+            command:
+            - sh
+            - -c
+            - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip\
+              \ || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\
+              \nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location\
+              \ 'kfp==2.15.2' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+              3.9\"' && \"$0\" \"$@\"\n"
+            - sh
+            - -ec
+            - 'program_path=$(mktemp -d)
+
+
+              printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+              _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+              '
+            - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing\
+              \ import *\n\ndef train_model(\n    learning_rate: float,\n    epochs:\
+              \ int,\n    hidden_units: int,\n    model: Output[Model],\n    metrics:\
+              \ Output[Metrics],\n):\n    import subprocess\n    import os\n    import\
+              \ json\n\n    model_dir = model.path\n    os.makedirs(model_dir, exist_ok=True)\n\
+              \n    subprocess.run([\n        \"python\",\n        \"/app/train.py\"\
+              ,\n        f\"--learning-rate={learning_rate}\",\n        f\"--epochs={epochs}\"\
+              ,\n        f\"--hidden-units={hidden_units}\",\n        f\"--model-dir={model_dir}\"\
+              ,\n        f\"--metrics-dir={metrics.path}\",\n    ], check=True)\n\n\
+              \    # Read metrics and log them\n    metrics_file = os.path.join(metrics.path,\
+              \ \"metrics.json\")\n    with open(metrics_file, \"r\") as f:\n    \
+              \    metrics_data = json.load(f)\n\n    metrics.log_metric(\"accuracy\"\
+              , metrics_data[\"accuracy\"])\n    metrics.log_metric(\"loss\", metrics_data[\"\
+              loss\"])\n    metrics.log_metric(\"learning_rate\", learning_rate)\n\
+              \n"
+            image: kubeflow-fashion-mnist:1.0
+        exec-train-model-2:
+          container:
+            args:
+            - --executor_input
+            - '{{$}}'
+            - --function_to_execute
+            - train_model
+            command:
+            - sh
+            - -c
+            - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip\
+              \ || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\
+              \nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location\
+              \ 'kfp==2.15.2' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+              3.9\"' && \"$0\" \"$@\"\n"
+            - sh
+            - -ec
+            - 'program_path=$(mktemp -d)
+
+
+              printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+              _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+              '
+            - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing\
+              \ import *\n\ndef train_model(\n    learning_rate: float,\n    epochs:\
+              \ int,\n    hidden_units: int,\n    model: Output[Model],\n    metrics:\
+              \ Output[Metrics],\n):\n    import subprocess\n    import os\n    import\
+              \ json\n\n    model_dir = model.path\n    os.makedirs(model_dir, exist_ok=True)\n\
+              \n    subprocess.run([\n        \"python\",\n        \"/app/train.py\"\
+              ,\n        f\"--learning-rate={learning_rate}\",\n        f\"--epochs={epochs}\"\
+              ,\n        f\"--hidden-units={hidden_units}\",\n        f\"--model-dir={model_dir}\"\
+              ,\n        f\"--metrics-dir={metrics.path}\",\n    ], check=True)\n\n\
+              \    # Read metrics and log them\n    metrics_file = os.path.join(metrics.path,\
+              \ \"metrics.json\")\n    with open(metrics_file, \"r\") as f:\n    \
+              \    metrics_data = json.load(f)\n\n    metrics.log_metric(\"accuracy\"\
+              , metrics_data[\"accuracy\"])\n    metrics.log_metric(\"loss\", metrics_data[\"\
+              loss\"])\n    metrics.log_metric(\"learning_rate\", learning_rate)\n\
+              \n"
+            image: kubeflow-fashion-mnist:1.0
+        exec-train-model-3:
+          container:
+            args:
+            - --executor_input
+            - '{{$}}'
+            - --function_to_execute
+            - train_model
+            command:
+            - sh
+            - -c
+            - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip\
+              \ || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\
+              \nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location\
+              \ 'kfp==2.15.2' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"\
+              3.9\"' && \"$0\" \"$@\"\n"
+            - sh
+            - -ec
+            - 'program_path=$(mktemp -d)
+
+
+              printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+              _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+              '
+            - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing\
+              \ import *\n\ndef train_model(\n    learning_rate: float,\n    epochs:\
+              \ int,\n    hidden_units: int,\n    model: Output[Model],\n    metrics:\
+              \ Output[Metrics],\n):\n    import subprocess\n    import os\n    import\
+              \ json\n\n    model_dir = model.path\n    os.makedirs(model_dir, exist_ok=True)\n\
+              \n    subprocess.run([\n        \"python\",\n        \"/app/train.py\"\
+              ,\n        f\"--learning-rate={learning_rate}\",\n        f\"--epochs={epochs}\"\
+              ,\n        f\"--hidden-units={hidden_units}\",\n        f\"--model-dir={model_dir}\"\
+              ,\n        f\"--metrics-dir={metrics.path}\",\n    ], check=True)\n\n\
+              \    # Read metrics and log them\n    metrics_file = os.path.join(metrics.path,\
+              \ \"metrics.json\")\n    with open(metrics_file, \"r\") as f:\n    \
+              \    metrics_data = json.load(f)\n\n    metrics.log_metric(\"accuracy\"\
+              , metrics_data[\"accuracy\"])\n    metrics.log_metric(\"loss\", metrics_data[\"\
+              loss\"])\n    metrics.log_metric(\"learning_rate\", learning_rate)\n\
+              \n"
+            image: kubeflow-fashion-mnist:1.0
+    pipelineInfo:
+      description: Train Fashion-MNIST with parallel hyperparameter runs and select
+        best model
+      name: fashion-mnist-hyperparameter-pipeline
+    root:
+      dag:
+        tasks:
+          deploy-to-kserve:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-deploy-to-kserve
+            dependentTasks:
+            - select-best-model-manual
+            inputs:
+              artifacts:
+                model:
+                  taskOutputArtifact:
+                    outputArtifactKey: best_model
+                    producerTask: select-best-model-manual
+              parameters:
+                max_replicas:
+                  runtimeValue:
+                    constant: 3.0
+                min_replicas:
+                  runtimeValue:
+                    constant: 1.0
+                model_name:
+                  runtimeValue:
+                    constant: fashion-mnist-model
+                namespace:
+                  runtimeValue:
+                    constant: kubeflow
+            taskInfo:
+              name: deploy-to-kserve
+          select-best-model-manual:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-select-best-model-manual
+            dependentTasks:
+            - train-model
+            - train-model-2
+            - train-model-3
+            inputs:
+              artifacts:
+                metrics_1:
+                  taskOutputArtifact:
+                    outputArtifactKey: metrics
+                    producerTask: train-model
+                metrics_2:
+                  taskOutputArtifact:
+                    outputArtifactKey: metrics
+                    producerTask: train-model-2
+                metrics_3:
+                  taskOutputArtifact:
+                    outputArtifactKey: metrics
+                    producerTask: train-model-3
+                model_1:
+                  taskOutputArtifact:
+                    outputArtifactKey: model
+                    producerTask: train-model
+                model_2:
+                  taskOutputArtifact:
+                    outputArtifactKey: model
+                    producerTask: train-model-2
+                model_3:
+                  taskOutputArtifact:
+                    outputArtifactKey: model
+                    producerTask: train-model-3
+            taskInfo:
+              name: select-best-model-manual
+          train-model:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-train-model
+            inputs:
+              parameters:
+                epochs:
+                  componentInputParameter: epochs
+                hidden_units:
+                  componentInputParameter: hidden_units
+                learning_rate:
+                  runtimeValue:
+                    constant: 0.001
+            taskInfo:
+              name: train-model
+          train-model-2:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-train-model-2
+            inputs:
+              parameters:
+                epochs:
+                  componentInputParameter: epochs
+                hidden_units:
+                  componentInputParameter: hidden_units
+                learning_rate:
+                  runtimeValue:
+                    constant: 0.0005
+            taskInfo:
+              name: train-model-2
+          train-model-3:
+            cachingOptions:
+              enableCache: true
+            componentRef:
+              name: comp-train-model-3
+            inputs:
+              parameters:
+                epochs:
+                  componentInputParameter: epochs
+                hidden_units:
+                  componentInputParameter: hidden_units
+                learning_rate:
+                  runtimeValue:
+                    constant: 0.0001
+            taskInfo:
+              name: train-model-3
+      inputDefinitions:
+        parameters:
+          epochs:
+            defaultValue: 5.0
+            isOptional: true
+            parameterType: NUMBER_INTEGER
+          hidden_units:
+            defaultValue: 128.0
+            isOptional: true
+            parameterType: NUMBER_INTEGER
+    schemaVersion: 2.1.0
+    sdkVersion: kfp-2.15.2

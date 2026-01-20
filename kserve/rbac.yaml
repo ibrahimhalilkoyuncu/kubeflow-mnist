@@ -1,0 +1,78 @@
+---
+# Role for managing InferenceServices
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kserve-role
+  namespace: kubeflow
+rules:
+- apiGroups:
+  - serving.kserve.io
+  resources:
+  - inferenceservices
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+---
+# RoleBinding for KServe ServiceAccount
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: kserve-rolebinding
+  namespace: kubeflow
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: kserve-role
+subjects:
+- kind: ServiceAccount
+  name: kserve-sa
+  namespace: kubeflow
+---
+# ClusterRole for pipeline to manage InferenceServices
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pipeline-kserve-deployer
+rules:
+- apiGroups:
+  - serving.kserve.io
+  resources:
+  - inferenceservices
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+---
+# ClusterRoleBinding for default-editor ServiceAccount (used by Kubeflow Pipelines)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pipeline-kserve-deployer-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pipeline-kserve-deployer
+subjects:
+- kind: ServiceAccount
+  name: default-editor
+  namespace: kubeflow
+- kind: ServiceAccount
+  name: pipeline-runner
+  namespace: kubeflow

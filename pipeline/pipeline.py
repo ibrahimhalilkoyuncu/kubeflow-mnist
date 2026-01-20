@@ -1,6 +1,7 @@
 from kfp import dsl
 from components.train_component import train_model
 from components.select_best_model import select_best_model_manual
+from components.deploy_to_kserve import deploy_to_kserve
 
 
 @dsl.pipeline(
@@ -31,11 +32,20 @@ def fashion_mnist_pipeline(
     )
 
     # Select best model
-    select_best_model_manual(
+    select_task = select_best_model_manual(
         model_1=train_task_1.outputs["model"],
         metrics_1=train_task_1.outputs["metrics"],
         model_2=train_task_2.outputs["model"],
         metrics_2=train_task_2.outputs["metrics"],
         model_3=train_task_3.outputs["model"],
         metrics_3=train_task_3.outputs["metrics"],
+    )
+    
+    # Deploy best model to KServe
+    deploy_to_kserve(
+        model=select_task.outputs["best_model"],
+        model_name="fashion-mnist-model",
+        namespace="kubeflow",
+        min_replicas=1,
+        max_replicas=3,
     )

@@ -1,0 +1,40 @@
+---
+# Manual InferenceService manifest (if you want to deploy manually instead of via pipeline)
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: fashion-mnist-model
+  namespace: kubeflow-user-example-com
+  annotations:
+    sidecar.istio.io/inject: "true"
+spec:
+  predictor:
+    serviceAccountName: kserve-sa
+    tensorflow:
+      # Storage URI pointing to MinIO
+      # Format: s3://mlpipeline/v2/artifacts/<pipeline-run-id>/<task-id>/best_model
+      # You need to update this with the actual path from your pipeline run
+      storageUri: "s3://mlpipeline/v2/artifacts/PIPELINE_RUN_ID/select-best-model-manual/best_model"
+      
+      # TensorFlow runtime version
+      runtimeVersion: "2.14.0"
+      
+      # Resource requests and limits
+      resources:
+        requests:
+          cpu: "500m"
+          memory: "1Gi"
+        limits:
+          cpu: "1"
+          memory: "2Gi"
+      
+      # Protocol version
+      protocolVersion: v1
+    
+    # Scaling configuration
+    minReplicas: 1
+    maxReplicas: 3
+    
+    # Autoscaling based on concurrency
+    scaleTarget: 1
+    scaleMetric: concurrency
